@@ -3,10 +3,9 @@ import json
 
 DB_NAME = "homeworks.db"
 
-# ---------- СУЩЕСТВУЮЩИЕ ФУНКЦИИ (ДЛЯ ДЗ) ----------
 async def create_table():
     async with aiosqlite.connect(DB_NAME) as db:
-        # Таблица для домашних заданий (была)
+        # Таблица для домашних заданий
         await db.execute('''
             CREATE TABLE IF NOT EXISTS homeworks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +18,7 @@ async def create_table():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # Новая таблица для кандидатов
+        # Таблица для кандидатов
         await db.execute('''
             CREATE TABLE IF NOT EXISTS candidates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -36,7 +35,7 @@ async def create_table():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
-        # Таблица для хранения вопросов анкеты
+        # Таблица для вопросов анкеты
         await db.execute('''
             CREATE TABLE IF NOT EXISTS intake_questions (
                 id INTEGER PRIMARY KEY,
@@ -57,9 +56,20 @@ async def create_table():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         ''')
+        # Таблица для учеников с их прогрессом
+        await db.execute('''
+            CREATE TABLE IF NOT EXISTS students (
+                user_id INTEGER PRIMARY KEY,
+                full_name TEXT,
+                level INTEGER DEFAULT 1,
+                total_xp INTEGER DEFAULT 0,
+                streak INTEGER DEFAULT 0,
+                last_activity DATE
+            )
+        ''')
         await db.commit()
         
-        # Заполним таблицу вопросов, если она пуста
+        # Заполняем таблицу вопросов, если она пуста
         async with db.execute("SELECT COUNT(*) FROM intake_questions") as cursor:
             count = (await cursor.fetchone())[0]
         if count == 0:
@@ -116,7 +126,6 @@ async def get_homework_by_id(hw_id):
         ) as cursor:
             return await cursor.fetchone()
 
-# ---------- НОВЫЕ ФУНКЦИИ ДЛЯ КАНДИДАТОВ ----------
 async def save_candidate(user_id, username, full_name, photo_file_id, category, answers_json, source):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute(
@@ -145,10 +154,9 @@ async def update_candidate_status(user_id, status, proposed_date=None, confirmed
             await db.execute("UPDATE candidates SET status = ? WHERE user_id = ?", (status, user_id))
         await db.commit()
 
-async def save_trial_lesson(candidate_id, proposed_date, status='proposed'):
+async def get_leaderboard(limit=10):
     async with aiosqlite.connect(DB_NAME) as db:
-        await db.execute(
-            "INSERT INTO trial_lessons (candidate_id, proposed_date, status) VALUES (?, ?, ?)",
-            (candidate_id, proposed_date, status)
-        )
-        await db.commit()
+        async with db.execute(
+            "SELECT user_id, total_xp, level, full_name FROM students ORDER BY total_xp DESC LIMIT ?", (limit,)
+        ) as cursor:
+            return await cursor.fetchall()
