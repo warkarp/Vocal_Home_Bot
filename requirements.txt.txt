@@ -1,4 +1,0 @@
-aiogram
-aiosqlite
-apscheduler
-python-dotenv
