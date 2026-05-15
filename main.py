@@ -13,24 +13,23 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 import database as db
 
-# ========== НАСТРОЙКИ ==========
-BOT_TOKEN = "8799314507:AAG_qhlf0L03XuMV7e0yylv8Iy4xGbP3DXU"  # замените на свой
-ADMIN_ID = 723984777     # замените на свой ID
-# ===============================
+# ========== НАСТРОЙКИ (ЗАМЕНИТЕ НА СВОИ) ==========
+BOT_TOKEN = "ВАШ_ТОКЕН"   # скопируйте из BotFather
+ADMIN_ID = 123456789      # ваш цифровой ID (через @userinfobot)
+# =================================================
 
 bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage)
 scheduler = AsyncIOScheduler()
 
-# Временное хранилище для состояний (например, для голосового ответа, ожидания даты)
-temp_state = {}
+temp_state = {}   # для временных данных
 
 # ---------- КЛАВИАТУРЫ ----------
 student_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📤 Отправить ДЗ")],
-        [KeyboardButton(text="📊 Мой прогресс")],
+        [KeyboardButton(text="🏆 Мой прогресс")],
         [KeyboardButton(text="❓ Помощь")]
     ],
     resize_keyboard=True
@@ -39,9 +38,9 @@ student_kb = ReplyKeyboardMarkup(
 teacher_kb = ReplyKeyboardMarkup(
     keyboard=[
         [KeyboardButton(text="📋 Список ДЗ")],
-        [KeyboardButton(text="🎤 Голосовой ответ")],
+        [KeyboardButton(text="👥 Новые заявки")],
         [KeyboardButton(text="⏰ Напомнить о ДЗ")],
-        [KeyboardButton(text="👥 Новые заявки")]
+        [KeyboardButton(text="🏆 Рейтинг учеников")]
     ],
     resize_keyboard=True
 )
@@ -54,17 +53,17 @@ class Onboarding(StatesGroup):
     answering_questions = State()
     waiting_for_voice = State()
 
-# ---------- ОБЩИЕ КОМАНДЫ ----------
+# ---------- ОБЩАЯ КОМАНДА /start ----------
 @dp.message(Command("start"))
 async def start_command(message: Message, state: FSMContext):
     user_id = message.from_user.id
     if user_id == ADMIN_ID:
         await message.answer("👩‍🏫 Здравствуйте, преподаватель!", reply_markup=teacher_kb)
         return
-    # Проверяем, есть ли уже кандидат с подтверждённой датой
+    # Проверяем, есть ли кандидат с подтверждённой датой
     candidate = await db.get_candidate(user_id)
     if candidate and candidate[7] in ['confirmed', 'finished']:
-        await message.answer("Добро пожаловать! Вы уже записаны на пробное занятие или являетесь учеником.", reply_markup=student_kb)
+        await message.answer("Добро пожаловать! Вы уже записаны на пробное занятие.", reply_markup=student_kb)
         return
     # Запускаем анкету
     await state.set_state(Onboarding.waiting_for_name)
@@ -102,7 +101,7 @@ async def get_category(callback: types.CallbackQuery, state: FSMContext):
     category = "child" if callback.data == "cat_child" else "adult"
     await state.update_data(category=category)
     await callback.message.delete_reply_markup()
-    # Получаем вопросы из БД
+    # Загружаем вопросы из БД
     async with aiosqlite.connect(db.DB_NAME) as conn:
         async with conn.execute("SELECT order_num, question_text FROM intake_questions ORDER BY order_num") as cursor:
             questions = await cursor.fetchall()
@@ -143,7 +142,7 @@ async def process_voice(message: Message, state: FSMContext):
     answers = data.get('answers', {})
     q_num = data.get('awaiting_voice_q_num')
     if q_num:
-        answers[q_num] = message.voice.file_id  # Сохраняем file_id, а не просто текст
+        answers[q_num] = message.voice.file_id
     await state.update_data(answers=answers)
     # Переходим к следующему вопросу после голосового
     questions = data['questions']
@@ -167,11 +166,9 @@ async def finish_onboarding(message: Message, state: FSMContext):
     answers_json = json.dumps(answers, ensure_ascii=False)
     source = answers.get(9, "не указан")
     await db.save_candidate(user_id, username, full_name, photo_file_id, category, answers_json, source)
-    
     # Отправляем админу анкету
     caption = f"📝 Новая заявка от {full_name}\nКатегория: {'ребёнок' if category=='child' else 'взрослый'}\nИсточник: {source}"
     await bot.send_photo(ADMIN_ID, photo_file_id, caption=caption)
-    
     # Отправляем текстовую версию анкеты
     answers_text = "Ответы:\n"
     for q_num, answer in answers.items():
@@ -181,14 +178,12 @@ async def finish_onboarding(message: Message, state: FSMContext):
                 q_text = row[0] if row else f"Вопрос {q_num}"
         answers_text += f"\n❓ {q_text}\n➡️ {answer}\n"
     await bot.send_message(ADMIN_ID, answers_text)
-    
     # Отправляем голосовое сообщение, если есть
     voice_file_id = answers.get(7)
-    if voice_file_id and isinstance(voice_file_id, str) and voice_file_id.startswith('AwACAg'):
+    if voice_file_id and isinstance(voice_file_id, str):
         await bot.send_voice(ADMIN_ID, voice_file_id, caption="🎤 Голосовое сообщение (крик)")
     else:
         await bot.send_message(ADMIN_ID, "🎤 Голосовое сообщение (крик) не получено.")
-    
     await message.answer("✅ Анкета отправлена преподавателю. Ожидай предложения даты и времени пробного занятия.")
     await state.clear()
 
@@ -200,7 +195,7 @@ async def send_dz_button(message: Message):
         return
     await message.answer("Отправьте голосовое или видео с упражнением.")
 
-@dp.message(lambda message: message.text == "📊 Мой прогресс")
+@dp.message(lambda message: message.text == "🏆 Мой прогресс")
 async def my_progress_button(message: Message):
     user_id = message.from_user.id
     homeworks = await db.get_user_homeworks(user_id)
@@ -224,7 +219,7 @@ async def help_button(message: Message):
         "• В разделе 'Мой прогресс' можно посмотреть свои работы."
     )
 
-# ---------- ПРИЁМ ГОЛОСОВЫХ/ВИДЕО (ДЗ) ----------
+# ---------- ПРИЁМ ДЗ ----------
 @dp.message(lambda message: (message.voice or message.video) and message.from_user.id != ADMIN_ID)
 async def handle_homework(message: Message):
     user_id = message.from_user.id
@@ -237,10 +232,9 @@ async def handle_homework(message: Message):
         file_type = "video"
     await db.save_homework(user_id, username, file_id, file_type)
     await message.answer("✅ Домашнее задание принято! Преподаватель получит уведомление.")
-    if ADMIN_ID:
-        await bot.send_message(ADMIN_ID, f"📢 Новое ДЗ от @{username}\nТип: {file_type}\nПроверь командой /admin")
+    await bot.send_message(ADMIN_ID, f"📢 Новое ДЗ от @{username}\nТип: {file_type}\nПроверь командой /admin")
 
-# ---------- АДМИНСКИЕ КОМАНДЫ И КНОПКИ ----------
+# ---------- АДМИНСКИЕ КОМАНДЫ ----------
 @dp.message(Command("admin"))
 async def admin_panel(message: Message):
     if message.from_user.id != ADMIN_ID:
@@ -320,7 +314,21 @@ async def list_candidates(message: Message):
         ])
         await bot.send_message(ADMIN_ID, "Для предложения времени нажми кнопку:", reply_markup=kb)
 
-# ---------- ОБРАБОТЧИКИ ЗАПИСИ НА ПРОБНОЕ ----------
+@dp.message(lambda message: message.text == "🏆 Рейтинг учеников" and message.from_user.id == ADMIN_ID)
+async def show_teacher_leaderboard(message: Message):
+    if message.from_user.id != ADMIN_ID:
+        return
+    # Получаем топ-10 учеников по XP
+    leaderboard = await db.get_leaderboard(limit=10)
+    if not leaderboard:
+        await message.answer("Пока нет данных для рейтинга.")
+        return
+    text = "🏆 **Рейтинг учеников (по XP)**\n\n"
+    for idx, (user_id, total_xp, level, full_name) in enumerate(leaderboard, 1):
+        text += f"{idx}. **{full_name}** — уровень {level}, {total_xp} XP\n"
+    await message.answer(text)
+
+# ---------- ЗАПИСЬ НА ПРОБНОЕ (ОБРАБОТЧИКИ) ----------
 @dp.callback_query(lambda c: c.data and c.data.startswith("offer_date_"))
 async def offer_date(callback: types.CallbackQuery):
     user_id = int(callback.data.split("_")[2])
@@ -390,7 +398,7 @@ async def admin_reply_date(message: Message):
     await message.answer("✅ Новая дата отправлена ученику.")
     del temp_state[message.from_user.id]
 
-# ---------- НАПОМИНАНИЯ (ПРОСТОЙ ПРИМЕР) ----------
+# ---------- НАПОМИНАНИЯ О ДЗ ----------
 async def send_reminder(user_id, text):
     await bot.send_message(user_id, text)
 
@@ -413,13 +421,27 @@ async def get_reminder_data(message: Message):
         send_reminder,
         'date',
         run_date=run_time,
-        args=[user_id, f"⏰ Напоминание: пора отправить домашнее задание по вокалу!"],
+        args=[user_id, "⏰ Напоминание: пора отправить домашнее задание по вокалу!"],
         id=f"reminder_{user_id}_{run_time.timestamp()}"
     )
     await message.answer(f"Напоминание для пользователя {user_id} установлено через {hours} часов.")
     del temp_state[message.from_user.id]
 
-# ---------- ЗАПУСК ----------
+@dp.message(Command("комментарий"))
+async def get_feedback(message: Message):
+    parts = message.text.split()
+    if len(parts) != 2 or not parts[1].isdigit():
+        await message.answer("Используйте: /комментарий <ID>")
+        return
+    hw_id = int(parts[1])
+    hw = await db.get_homework_by_id(hw_id)
+    if not hw or hw[0] != message.from_user.id:
+        await message.answer("Задание не найдено или это не ваше задание.")
+        return
+    feedback = hw[5] or "Комментарий отсутствует."
+    await message.answer(f"📝 Комментарий преподавателя к заданию #{hw_id}:\n\n{feedback}")
+
+# ---------- ЗАПУСК БОТА ----------
 async def on_startup():
     await db.create_table()
     print("Таблица базы данных готова")
